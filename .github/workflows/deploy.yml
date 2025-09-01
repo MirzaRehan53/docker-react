@@ -3,27 +3,44 @@ on:
   push:
     branches:
       - main
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # Map secrets to env so we can safely reference them in `if:` conditions
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      # Optional: only runs if BOTH env vars are non-empty
       - name: Docker login (optional; only if you push/pull private images)
-        if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login docker.io -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-      - run: docker build -t rehan/react-test -f Dockerfile.dev .
-      - run: docker run -e CI=true rehan/react-test npm test
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
+        run: echo "$DOCKER_PASSWORD" | docker login docker.io -u "$DOCKER_USERNAME" --password-stdin
+
+      - name: Build test image
+        run: docker build -t rehan/react-test -f Dockerfile.dev .
+
+      - name: Run tests
+        run: docker run -e CI=true rehan/react-test npm test -- --watch=false
 
       - name: Generate deployment package
-        run: zip -r deploy.zip . -x '*.git'
+        run: |
+          # Exclude .git directory properly, plus some usual junk
+          zip -r deploy.zip . \
+            -x ".git/*" "node_modules/*" "coverage/*" "Dockerfile.dev" "tests/*"
+
       - name: Deploy to EB
         uses: einaregilsson/beanstalk-deploy@v21
         with:
-            aws_access_key: ${{secrets.AWS_ACCESS_KEY}}
-            aws_secret_key: ${{secrets.AWS_SECRET_KEY}}
-            application_name: frontend
-            environment_name: Frontend-env
-            existing_bucket_name: elasticbeanstalk-us-east-1-650251720168
-            region: us-east-1
-            version_label: ${{github.sha}}
-            deployment_package: deploy.zip
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_KEY }}
+          application_name: frontend
+          environment_name: Frontend-env
+          existing_bucket_name: elasticbeanstalk-us-east-1-650251720168
+          region: us-east-1
+          version_label: ${{ github.sha }}
+          deployment_package: deploy.zip
