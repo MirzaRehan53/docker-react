@@ -12,11 +12,8 @@ jobs:
       - run: docker build -t rehan/react-test -f Dockerfile.dev .
       - run: docker run -e CI=true rehan/react-test npm test
 
-
       - name: Generate deployment package
         run: zip -r deploy.zip . -x '*.git'
-
-
       - name: Deploy to EB
         uses: einaregilsson/beanstalk-deploy@v21
         with:
